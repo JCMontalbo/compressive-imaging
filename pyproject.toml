@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "csi"
+version = "0.1.0"
+description = "Compressive sensing for radar imaging and video: solvers from scratch, the ISAR model rebuilt, the 2016 failure diagnosed"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "John Montalbo" }]
+dependencies = ["numpy>=1.24", "scipy>=1.10"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "matplotlib>=3.7"]
+
+[tool.setuptools]
+packages = ["csi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
