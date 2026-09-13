@@ -74,8 +74,10 @@ Pre-registered:
   F1 (peaks within one resolution cell of true scatterers) is < 0.5 — reproducing Figure 4's smudge.
 - **H2 (the diagnosis)**: pipeline I at the same 22.5 % samples gives F1 ≥ 0.9 and localisation error
   < 1 cell for ≥ 90 % of scatterers, at the paper's SNR (noise-free) and at 20 dB.
-- **H3 (why)**: the phase history's best 30-term Fourier approximation captures < 50 % of its energy
-  (it is not sparse in the basis P assumes), while the image is exactly 30-sparse.
+- **H3 (why)**: the phase history is not sparse in the basis pipeline P assumes (the sampling basis,
+  where ℓ₁ is applied to the data itself): its best 36-term approximation there captures < 50 % of its
+  energy, while the image is exactly 36-sparse. *(Amended before any run: the first wording said
+  "Fourier approximation", which is the image and is sparse — the opposite of the point.)*
 - Then: a phase transition (sampling fraction × scatterer count → P(F1 ≥ 0.9)), and a two-scatterer
   resolution test — separation vs. SNR at which ℓ₁ still resolves them below the Fourier limit.
 - Motion compensation (the step that "was a disaster" on the paper's CS image) applied to the pipeline-I
