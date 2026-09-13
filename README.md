@@ -9,6 +9,17 @@ on signals and images, tried ℓ₁ recovery from non-uniform samples with an of
 by saying what came next: *"learn more about interior point algorithms so as to try and develop our own
 compressive sensing algorithm that can be utilized within the radar system process."*
 
+<p align="center">
+<img src="figures/hero.gif" width="100%" alt="top: a natural image rebuilt from a growing fraction of its Fourier coefficients; bottom: a radar target rebuilt from a growing fraction of its phase-history samples, by zero-filling and by image-domain l1">
+</p>
+
+*Keeping less, twice. **Top:** the thesis's idea — a natural image rebuilt from only its largest Fourier
+coefficients, from 0.05% of them up to 30%, with the coefficients kept shown in k-space. At 1% the image is
+recognisable; at 5% the error is 4%. **Bottom:** the radar imaging the thesis pointed at — a 39-scatterer
+target rebuilt from a growing fraction of its phase-history samples. Same samples, two answers: assume the
+data is sparse (zero-fill) and you get noise until well past 40%; assume the image is sparse (ℓ₁) and the
+target is there from about 10%. Made by `scripts/make_hero.py`.*
+
 This repository is that next step. I wrote the pass/fail lines into git before running anything
 ([docs/plan.md](docs/plan.md)), so what follows is what I found, misses included.
 
