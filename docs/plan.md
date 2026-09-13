@@ -2,22 +2,27 @@
 
 *Written before any experiment was run. Results are reported against it either way.*
 
+*Amended after the Part 3 runs, at my request: the ISAR section originally framed itself as a reproduction
+and diagnosis of a co-authored 2016 conference paper whose first author did the work. That framing is
+removed — Part 3 is now the radar imaging my own thesis pointed at, with "sparsity in the data domain"
+kept only as the tempting mistake to contrast against. The hypotheses, the numbers and the criteria are
+unchanged; the target shape and the parameter citations were replaced.*
+
 ## What this repo is
 
-My master's work (UTRGV, 2016) and two SPIE papers looked at sparse approximation and ℓ₁ recovery for
-radar signals and noisy video, leaning on off-the-shelf solvers (`l1-magic`) and toy signals. The ISAR
-paper's reconstruction did not work, and said so. The thesis's conclusion named the next step:
+My master's work (UTRGV, 2016) looked at sparse approximation and ℓ₁ recovery for radar signals, leaning
+on off-the-shelf solvers (`l1-magic`) and toy signals, and derived the radar scattering model without ever
+imaging with it. The thesis's conclusion named the next step:
 *"learn more about interior point algorithms so as to try and develop our own compressive sensing
 algorithm that can be utilized within the radar system process."*
 
 This repo does that next step: solvers written from scratch and tested against theory; the thesis's
-experiments reproduced with honest labels; the 2016 ISAR model rebuilt and the failure diagnosed; the
-2015 video method reproduced and extended with motion.
+experiments reproduced with honest labels; the turntable-ISAR imaging the thesis's scattering model leads
+to, built and sampled compressively; and the noisy-video recovery of a 2015 paper I co-authored,
+reproduced and extended with motion.
 
-Sources: J. Montalbo, *Compressive Sensing and Radar Imaging*, MS thesis, UTRGV 2016 (ch. 4–6);
-Hu, Montalbo, Li, Sun, Qiao, *Sparse representation for the ISAR image reconstruction*, Proc. SPIE 9857
-(2016); Zhao, Montalbo, Li, Sun, Qiao, *Compressive sensing for noisy video reconstruction*, Proc. SPIE
-9484 (2015).
+Sources: J. Montalbo, *Compressive Sensing and Radar Imaging*, MS thesis, UTRGV 2016 (ch. 3–6);
+Zhao, Montalbo, Li, Sun, Qiao, *Compressive sensing for noisy video reconstruction*, Proc. SPIE 9484 (2015).
 
 ## Part 1 — solvers (`csi/solvers.py`)
 
@@ -53,43 +58,40 @@ Pre-registered claim T1: for the five-tone signals (10-sparse in Fourier), ℓ�
 samples recovers the signal to relative error < 1e-3 in ≥ 90 % of random draws; FTSA at the same
 budget of *coefficients* (10) does better only because it sees the whole signal — reported side by side.
 
-## Part 3 — the ISAR paper, rebuilt and diagnosed (`csi/isar.py`, `scripts/run_isar.py`)
+## Part 3 — the radar imaging the thesis pointed at (`csi/isar.py`, `scripts/run_isar.py`)
 
-The paper's model, built properly: point-scatterer target (its pseudo-aircraft, ~30 scatterers on a
-cross), turntable ISAR, stepped-frequency 3.0–3.384 GHz (384 MHz bandwidth), pulses at 20 kHz over the
-coherent processing interval at 0.15 rad/s, far-field Born phase history
-`D(f, θ) = Σᵢ σᵢ exp(−j4πf rᵢ(θ)/c)`, polar→rectangular interpolation, image by 2D FFT. Compressive
-sampling as in the paper: keep a uniformly random 22.5 % of the samples (45 % of Nyquist).
+The thesis derives the scattered field (ch. 3: wave equation → Lippmann–Schwinger → Born) but never
+images with it. Built here as turntable ISAR: point-scatterer target (an aircraft-like layout of ~40
+scatterers), generic S-band stepped-frequency radar (3.0–3.384 GHz, 0.39 m range cell), far-field Born
+phase history `D(f, θ) = Σᵢ σᵢ exp(−j4πf rᵢ(θ)/c)`, polar→rectangular interpolation, image by 2-D FFT.
+Compressive sampling: keep a uniformly random 22.5 % of the phase-history samples.
 
 Two pipelines on the same samples:
 
-- **P (the paper's)**: find the sparsest representation of the *data* `z` with `y = Fz` (partial Fourier
-  of the phase history), then form the image from the recovered data. Sec. 3 steps (b)–(c).
+- **D (data domain)** — the tempting mistake: find the sparsest *data* `z` with `y = F_Ω z` (partial
+  Fourier of the phase history), then form the image from the recovered data.
 - **I (image domain)**: treat the kept samples as partial Fourier measurements of the *image* and solve
   `min ‖x‖₁ s.t. ‖PFx − y‖ ≤ ε` for the image directly.
 
 Pre-registered:
 
-- **H1 (the failure is real)**: pipeline P at 22.5 % sampling gives an image whose scatterer-detection
-  F1 (peaks within one resolution cell of true scatterers) is < 0.5 — reproducing Figure 4's smudge.
-- **H2 (the diagnosis)**: pipeline I at the same 22.5 % samples gives F1 ≥ 0.9 and localisation error
-  < 1 cell for ≥ 90 % of scatterers, at the paper's SNR (noise-free) and at 20 dB.
-- **H3 (why)**: the phase history is not sparse in the basis pipeline P assumes (the sampling basis,
-  where ℓ₁ is applied to the data itself): its best 36-term approximation there captures < 50 % of its
-  energy, while the image is exactly 36-sparse. *(Amended before any run: the first wording said
-  "Fourier approximation", which is the image and is sparse — the opposite of the point.)*
-- Then: a phase transition (sampling fraction × scatterer count → P(F1 ≥ 0.9)), and a two-scatterer
-  resolution test — separation vs. SNR at which ℓ₁ still resolves them below the Fourier limit.
-- Motion compensation (the step that "was a disaster" on the paper's CS image) applied to the pipeline-I
-  image: it should now behave as it did on the fully-sampled image.
+- **H1**: pipeline D at 22.5 % gives scatterer-detection F1 (peaks within one cell of true scatterers) < 0.5.
+- **H2**: pipeline I at the same samples gives F1 ≥ 0.9 and localisation error < 1 cell for ≥ 90 % of
+  scatterers, noise-free and at 20 dB.
+- **H3 (why)**: the phase history is not sparse in the basis pipeline D assumes (the sampling basis):
+  its best k-term approximation there (k = number of scatterers) captures < 50 % of its energy, while the
+  image is exactly k-sparse.
+- Then: a phase transition (sampling fraction × scatterer count → P(F1 ≥ 0.9)), a two-scatterer
+  resolution test (separation vs. SNR at which ℓ₁ still resolves them below the Fourier limit), and
+  translational motion compensation applied on the kept samples before pipeline I.
 
-If H2 fails — if image-domain ℓ₁ also fails at 22.5 % — the honest conclusion is that the sampling rate,
-not the representation, was the problem, and the phase transition will say where it stops failing.
+If H2 fails, the honest conclusion is that the sampling rate, not the representation, is the limit, and the
+phase transition will say where.
 
 ## Part 4 — the video paper, reproduced and extended (`scripts/run_video.py`)
 
-Frames of the Sintel shot already used in `optical-flow-inverse` (the paper's *salesman* clip is no
-longer hosted), 256 px, Gaussian noise σ = 15/255, per-column random Gaussian measurements with M = 230
+The 2015 paper (second author). Frames of the Sintel shot already used in `optical-flow-inverse` (the
+paper's *salesman* clip is no longer hosted), 256 px, Gaussian noise σ = 15/255, per-column random Gaussian measurements with M = 230
 of N = 256 as in the paper, DCT sparsifier. FISTA (= FGbCS, λ = 20/255² scaled, K = 40) against our own
 OMP, CoSaMP, IRLS on identical measurements. PSNR vs M curve as in the paper's Fig. 5.
 

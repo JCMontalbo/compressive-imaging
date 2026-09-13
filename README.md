@@ -2,11 +2,10 @@
 
 [![tests](https://github.com/JCMontalbo/compressive-imaging/actions/workflows/ci.yml/badge.svg)](https://github.com/JCMontalbo/compressive-imaging/actions/workflows/ci.yml)
 
-My master's work (UTRGV, 2016) and two SPIE papers looked at sparse approximation and ℓ₁ recovery for
-radar signals and noisy video, leaning on off-the-shelf solvers and toy signals. The ISAR paper's
-reconstruction did not work, and said so. The thesis's last sentence named the next step: *"learn more
-about interior point algorithms so as to try and develop our own compressive sensing algorithm that can
-be utilized within the radar system process."*
+My master's work (UTRGV, 2016) studied sparse approximation and ℓ₁ recovery for radar signals, leaning
+on off-the-shelf solvers and toy signals, and derived the radar scattering model without ever imaging with
+it. Its last sentence named the next step: *"learn more about interior point algorithms so as to try and
+develop our own compressive sensing algorithm that can be utilized within the radar system process."*
 
 This repository is that next step, done with the pass/fail lines written down first
 ([docs/plan.md](docs/plan.md)):
@@ -16,57 +15,59 @@ This repository is that next step, done with the pass/fail lines written down fi
    with an exact Fourier-domain update.
 2. **The thesis's experiments reproduced and labelled honestly** — including the finding that its test
    signals were never sparse, which is why its ℓ₁ step "needed the original signal".
-3. **The 2016 ISAR model rebuilt, the failure reproduced, and the reason found** — the paper applied
-   sparsity to the phase history; the *image* is what is sparse. Same 22.5 % of the samples, F1 0.56 → 1.00.
-4. **The 2015 video method reproduced and extended** with frame differences and motion-compensated
-   residuals using the flow from [optical-flow-inverse](https://github.com/JCMontalbo/optical-flow-inverse).
+3. **The radar imaging the thesis pointed at, built** — turntable ISAR from the thesis's own scattering
+   model, sampled compressively, with the one decision that makes or breaks it: sparsity has to be assumed
+   in the image, not the data. Same 22.5 % of the samples: F1 0.54 → 0.96 (the full-data ceiling).
+4. **A 2015 noisy-video paper I co-authored, reproduced and extended** with frame differences and
+   motion-compensated residuals using the flow from
+   [optical-flow-inverse](https://github.com/JCMontalbo/optical-flow-inverse).
 
 Every number below comes from a script in `scripts/`; 20 tests, CI on Python 3.10–3.13.
 
 Sources: J. Montalbo, *Compressive Sensing and Radar Imaging*, MS thesis, UTRGV 2016 ·
-Hu, Montalbo, Li, Sun, Qiao, *Sparse representation for the ISAR image reconstruction*, Proc. SPIE 9857 (2016) ·
 Zhao, Montalbo, Li, Sun, Qiao, *Compressive sensing for noisy video reconstruction*, Proc. SPIE 9484 (2015).
 
 ---
 
-## 3. The ISAR paper: why the 2016 reconstruction failed, and the fix
+## 3. The radar imaging the thesis pointed at
 
-The paper's model, built properly ([`csi/isar.py`](csi/isar.py)): far-field Born phase history of point
-scatterers on a turntable, stepped-frequency 3.0–3.384 GHz (0.39 m range cell), 64 pulses over the aperture
-that makes cross-range cells the same size, the paper's pseudo-aircraft of 37 scatterers, polar→rectangular
-interpolation, image by 2-D FFT. Compressive sampling as in the paper: keep a uniformly random 22.5 % of the
-phase-history samples ("45 % of Nyquist").
+The thesis derives the scattered field from the scalar wave equation (ch. 3: Lippmann–Schwinger, then the
+Born and far-field approximations) and stops there. [`csi/isar.py`](csi/isar.py) carries it through to an
+image: turntable ISAR, a generic S-band stepped-frequency radar (3.0–3.384 GHz, 0.39 m range cell, 64 pulses
+over the aperture that makes cross-range cells the same size), an aircraft-like layout of 39 point
+scatterers, polar→rectangular interpolation, image by 2-D FFT. Compressive sampling: keep a uniformly random
+22.5 % of the phase-history samples.
+
+The question the thesis never got to ask: *where* is the sparsity? Two pipelines on the same samples.
 
 ![isar pipelines](figures/isar_pipelines.png)
 
 | pipeline, 22.5 % of samples | F1 (peaks within one cell of a true scatterer) | energy on the true scatterers |
 |---|---|---|
-| full data (reference, the paper's Fig. 3) | 1.00 | 0.76 |
-| zero-filled inverse FFT | 0.69 | **0.19** |
-| the paper's: ℓ₁ applied to the *data*, then image (Fig. 4) | 0.56 | 0.50 |
-| **ℓ₁ applied to the *image*** (same samples) | **1.00** | **0.82** |
-| … at 20 dB SNR | 1.00 | 0.82 |
+| full data (the ceiling: a few scatterers share a cell) | 0.96 | 0.66 |
+| zero-filled inverse FFT | 0.61 | **0.16** |
+| ℓ₁ applied to the *data*, then image — the tempting mistake | 0.54 | 0.42 |
+| **ℓ₁ applied to the *image*** (same samples) | **0.96** | **0.74** |
+| … at 20 dB SNR | 0.96 | 0.73 |
 
-**What went wrong in 2016.** The paper's Section 3 finds "the most sparse representation of the original
-signal" — the phase history — and then images it. But the phase history is a sum of 37 complex exponentials
-and is not sparse: its 37 largest samples hold **21.6 %** of its energy. The image is exactly 37-sparse
-(100 %). Sparsity was assumed in the wrong domain. In the physically meaningful reading (a random subset of
-the *data* is what was acquired), the sparsest data consistent with the samples is simply the samples with
-zeros elsewhere, and the method degenerates to zero-filling — whose aliasing noise is the paper's Figure 4.
-Treating the kept samples as partial Fourier measurements of the image and solving for the image gives the
-target back at the same sampling rate, with or without noise.
+**Why.** The phase history is a sum of 39 complex exponentials and is not sparse: its 39 largest samples
+hold **15 %** of its energy. The image is exactly 39-sparse. ℓ₁ applied to the data has nothing to find; in
+the physically meaningful reading (a random subset of the data is what was acquired) the sparsest data
+consistent with the samples is just the samples with zeros elsewhere, and the "method" degenerates to
+zero-filling, whose aliasing noise fills the third panel. Treat the kept samples as partial Fourier
+measurements of the image instead and the target comes back at the full-data ceiling, with or without noise.
 
 **Against the pre-registered criteria:** H2 (image-domain ℓ₁ at 22.5 %: F1 ≥ 0.9, localisation < 1 cell)
 **supported**, noise-free and at 20 dB. H3 (data not sparse in the basis used, image is) **supported**.
-H1 said the paper's pipeline would score F1 < 0.5; it scored 0.56 (and zero-fill 0.69), so **H1 is not met
-by its number** — my peak detector is lenient. The failure is plain in the images and in the energy-on-target
-column, but the line I set was the wrong line, and it stays as set.
+H1 said the data-domain pipeline would score F1 < 0.5; it scored 0.54 (and zero-fill 0.61), so **H1 is not
+met by its number** — my peak detector is lenient. The failure is plain in the images and in the
+energy-on-target column, but the line I set was the wrong line, and it stays as set.
 
 ![isar phase transition](figures/isar_phase_transition.png)
 
 The phase transition of the image-domain pipeline on random scenes: 80 scatterers need ≥ 10 % of the
 samples, 160 need ~20 % and are unreliable, 320+ fail at every rate tried (FISTA, 200 iterations, fixed λ —
-the pipeline's transition, not the information-theoretic one). The paper's target sits well inside the
+the pipeline's transition, not the information-theoretic one). A 40-scatterer target sits well inside the
 feasible region at 22.5 %.
 
 ![isar resolution](figures/isar_resolution.png)
@@ -79,8 +80,8 @@ result, reproduced.
 ![isar motion](figures/isar_motion.png)
 
 A 3-cell translational range walk over the CPI smears the full-data image to F1 0.03. Compensating the
-walk on the *kept* samples and then running image-domain ℓ₁ gives F1 1.00 — the step that was "a disaster"
-on the paper's compressive image behaves normally once the image, not the data, is the sparse unknown.
+walk on the *kept* samples and then running image-domain ℓ₁ gives F1 0.96, the ceiling again; zero-filling
+compensated stays at 0.61.
 
 ## 2. The master's thesis, reproduced honestly
 
@@ -135,9 +136,9 @@ The interior-point method (primal log barrier, Newton with the KKT system reduce
 Vandenberghe ch. 10–11) is the algorithm behind `l1-magic`'s `l1eq_pd` — the thing the thesis said it wanted
 to learn. It converges in ~70 Newton steps on the thesis-sized problems.
 
-## 4. The video paper, reproduced and extended — mostly a negative result
+## 4. The 2015 video paper, reproduced and extended — mostly a negative result
 
-The 2015 paper's setting: the video is degraded by Gaussian noise (σ = 15/255), each column of each frame is
+A conference paper I co-authored (second author). Its setting: the video is degraded by Gaussian noise (σ = 15/255), each column of each frame is
 measured by a Gaussian matrix with M of N rows (the paper: 230 of 256), the column is assumed sparse in the
 DCT, and FISTA ("FGbCS") is compared with OMP, CoSaMP, IRLS on PSNR against the clean frame. Reproduced on
 12 Sintel frames (128 × 256) since the paper's *salesman* clip is no longer hosted.

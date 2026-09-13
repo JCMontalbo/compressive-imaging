@@ -1,4 +1,4 @@
-"""Part 3: the 2016 ISAR paper rebuilt, its failure reproduced and diagnosed (docs/plan.md).
+"""Part 3: the radar imaging the thesis pointed at -- turntable ISAR with compressive sampling (docs/plan.md).
 
     python scripts/run_isar.py
 
@@ -26,7 +26,7 @@ from csi.isar import (  # noqa: E402
     keep_random,
     phase_history,
     pipeline_image,
-    pipeline_paper,
+    pipeline_data,
     pipeline_zero_fill,
     polar_to_rect,
     pseudo_aircraft,
@@ -36,7 +36,7 @@ from csi.isar import (  # noqa: E402
 
 FIG = Path(__file__).resolve().parents[1] / "figures"
 N = 64
-FRACTION = 0.225  # the paper: 45 % of Nyquist
+FRACTION = 0.225  # keep 22.5 % of the phase-history samples
 
 
 def db(img):
@@ -74,7 +74,7 @@ def fig_pipelines(radar, scene):
         rows[snr] = {
             "full data": image_from_rect(r),
             "zero-fill": pipeline_zero_fill(r, idx),
-            "paper (l1 on data)": pipeline_paper(r, idx),
+            "l1 on the data": pipeline_data(r, idx),
             "image-domain l1": pipeline_image(r, idx),
         }
     fig, ax = plt.subplots(2, 5, figsize=(17, 7), constrained_layout=True)
@@ -86,7 +86,7 @@ def fig_pipelines(radar, scene):
             ax[i, j].imshow(db(img), cmap="gray_r", vmin=-30, vmax=0)
             _clean(ax[i, j], f"{name}{'' if name == 'full data' else f' @ {FRACTION:.1%}'}\nF1 {f1:.2f}, energy on target {energy_on_support(img, truth):.2f}")
         ax[i, 0].set_ylabel("noise-free" if snr is None else f"SNR {snr:.0f} dB", fontsize=10)
-    fig.suptitle("ISAR pseudo-aircraft, 22.5 % of the phase history kept: the paper's pipeline vs. image-domain l1 (dB, 30 dB range)", fontsize=11)
+    fig.suptitle("Turntable ISAR, 22.5 % of the phase history kept: where the sparsity is assumed decides everything (dB, 30 dB range)", fontsize=11)
     fig.savefig(FIG / "isar_pipelines.png", dpi=110)
     plt.close(fig)
     out = {}
@@ -123,7 +123,7 @@ def fig_phase_transition(radar, trials=8):
     ax.set_xticks(fractions)
     ax.set_xticklabels([f"{f:.2f}" for f in fractions], fontsize=7)
     ax.axvline(FRACTION, c="w", ls="--", lw=1)
-    ax.text(FRACTION + 0.005, len(counts) - 0.9, "paper: 22.5 %", color="w", fontsize=8)
+    ax.text(FRACTION + 0.005, len(counts) - 0.9, "22.5 %", color="w", fontsize=8)
     ax.set_xlabel("fraction of phase-history samples kept")
     ax.set_ylabel("number of scatterers (64 x 64 image)")
     ax.set_title("Image-domain l1: probability of F1 >= 0.9 (8 random scenes per cell)")
@@ -194,7 +194,7 @@ def fig_resolution(radar, trials=6, oversample=2):
 
 def fig_motion(radar, scene):
     """Translational range walk smears the image; compensating it on the kept samples works for the
-    image-domain pipeline, and does nothing for the zero-filled one (the paper's 'disaster')."""
+    image-domain pipeline and does nothing for the zero-filled one."""
     truth = render_scene(scene, radar, N)
     D = phase_history(scene, radar)
     # translational motion: range changes linearly over the CPI by 3 resolution cells

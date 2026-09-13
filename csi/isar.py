@@ -1,18 +1,20 @@
-"""Turntable ISAR: the model of Hu, Montalbo, Li, Sun & Qiao (SPIE 9857, 2016), built properly.
+"""Turntable ISAR: the radar imaging the master's thesis pointed at, built.
 
-Far-field, Born-approximation, stepped-frequency phase history of a set of point scatterers on a
-turntable rotating through a small angle:
+The thesis (ch. 3) derives the scattered field from the scalar wave equation via the Lippmann–Schwinger
+equation and, under the Born (single-scattering) and far-field approximations, arrives at the standard
+stepped-frequency phase history of a set of point scatterers on a turntable rotating through a small angle:
 
     D(f_m, θ_n) = Σ_i σ_i exp(−j 4π f_m r_i(θ_n) / c),   r_i(θ) = x_i cos θ + y_i sin θ.
 
 With  k_x = 2f cosθ / c,  k_y = 2f sinθ / c  this is the 2-D Fourier transform of the reflectivity
 map sampled on a polar grid (range–Doppler / polar format). Imaging = interpolate the polar samples
-onto a rectangular k-grid and inverse-FFT. The paper's parameters (Table 1): 3.0–3.384 GHz,
-20 kHz PRF, 0.15 rad/s, 1300 m. Compressive sampling: keep a random subset of the phase-history samples.
+onto a rectangular k-grid and inverse-FFT. Parameters are a generic S-band stepped-frequency radar
+(3.0–3.384 GHz, 384 MHz bandwidth, 0.39 m range cell). Compressive sampling: keep a random subset of
+the phase-history samples.
 
 Two reconstruction pipelines on the same kept samples (docs/plan.md, Part 3):
 
-* ``pipeline_paper``  -- the paper's Sec. 3: treat the *data* as the sparse unknown, ℓ₁-recover it
+* ``pipeline_data``   -- the tempting mistake: treat the *data* as the sparse unknown, ℓ₁-recover it
                          from partial Fourier rows, then image the recovered data.
 * ``pipeline_image``  -- treat the kept samples as partial Fourier measurements of the *image* and
                          ℓ₁-recover the image directly.
@@ -46,9 +48,8 @@ class Radar:
 
     @property
     def dtheta(self):
-        """Total rotation over the CPI. The paper's 20 kHz pulses at 0.15 rad/s give a tiny angle per
-        pulse; we keep ``n_pulse`` pulses spread over the aperture needed for the chosen cross-range
-        resolution (decimated slow time), so that range and cross-range cells are the same size."""
+        """Total rotation over the CPI: ``n_pulse`` pulses spread over the aperture that makes the
+        cross-range cell equal to the range cell (decimated slow time)."""
         lam = C / (self.f0 + self.bandwidth / 2)
         return lam / (2 * self.range_res)
 
@@ -77,10 +78,12 @@ class Scene:
 
 
 def pseudo_aircraft(spacing: float = 1.0) -> Scene:
-    """The paper's Figure 2: fuselage along x (−10..10), wing at y = −5 (−5..5), tail at x = 0 (0..5)."""
-    pts = [(x, 0.0) for x in np.arange(-10, 10.01, spacing)]
-    pts += [(x, -5.0) for x in np.arange(-5, 5.01, spacing)]
-    pts += [(0.0, y) for y in np.arange(1.0, 5.01, spacing)]
+    """A point-scatterer aircraft: fuselage along x, swept wings, tailplane and fin."""
+    pts = [(x, 0.0) for x in np.arange(-9, 9.01, spacing)]  # fuselage
+    for sgn in (1, -1):
+        pts += [(-1.0 - 0.5 * k, sgn * (1.0 + k)) for k in range(0, 6)]  # swept wings
+        pts += [(-7.5 - 0.3 * k, sgn * (0.8 + 0.6 * k)) for k in range(0, 3)]  # tailplane
+    pts += [(-7.5, 0.0), (-8.0, 0.0)]  # fin (foreshortened onto the plane)
     xs, ys = zip(*pts)
     return Scene(np.array(xs), np.array(ys), np.ones(len(pts)))
 
@@ -109,7 +112,7 @@ def image_grid(radar: Radar, n: int):
 
 def polar_to_rect(D: np.ndarray, radar: Radar, n: int) -> np.ndarray:
     """Interpolate the polar phase history onto the rectangular k-grid that the n×n image's FFT lives on
-    (the paper's Figure 1). Returns the rectangular data, fftshifted so that index 0 is DC."""
+    (polar-format algorithm). Returns the rectangular data, fftshifted so that index 0 is DC."""
     kx, ky = polar_k(radar)
     d = radar.range_res
     dk = 1 / (n * d)  # k-grid spacing for an n-pixel image with pixel d
@@ -161,8 +164,8 @@ def pipeline_zero_fill(rect: np.ndarray, idx) -> np.ndarray:
     return image_from_rect(z.reshape(rect.shape))
 
 
-def pipeline_paper(rect: np.ndarray, idx, n_iter: int = 400) -> np.ndarray:
-    """The paper's Sec. 3: the *data* d is the unknown, measured through random rows of the DFT,
+def pipeline_data(rect: np.ndarray, idx, n_iter: int = 400) -> np.ndarray:
+    """The tempting mistake: the *data* d is the unknown, measured through random rows of the DFT,
     recovered as the sparsest z with F_Ω z = y, then imaged. (The data is not sparse; see H3.)"""
     A = PartialFourier(rect.shape, idx)
     y = A(rect)
