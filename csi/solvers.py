@@ -192,6 +192,8 @@ def _cg(M, b, n_iter, tol=1e-12):
 def basis_pursuit_admm(A: LinearOperator, y, n_iter: int = 2000, rho: float = 1.0, tol: float = 1e-8, cg_iter: int = 100):
     """Boyd et al. §6.2: x ← proj onto {Ax = y} of (z − u); z ← soft(x + u, 1/ρ); u ← u + x − z."""
     y = np.asarray(y, complex).ravel()
+    scale = max(float(np.linalg.norm(y)), 1e-30)  # the problem is scale-invariant; the iteration is not
+    y = y / scale
     n = int(np.prod(A.shape_in))
     z = np.zeros(n, complex)
     u = np.zeros(n, complex)
@@ -213,7 +215,8 @@ def basis_pursuit_admm(A: LinearOperator, y, n_iter: int = 2000, rho: float = 1.
         z = z_new
         if prim < tol * max(np.linalg.norm(x), 1) and dual < tol * max(np.linalg.norm(u), 1):
             break
-    return Result(z.reshape(A.shape_in), obj, k + 1, float(np.linalg.norm(A(z.reshape(A.shape_in)).ravel() - y)))
+    z = z * scale
+    return Result(z.reshape(A.shape_in), [o * scale for o in obj], k + 1, float(np.linalg.norm(A(z.reshape(A.shape_in)).ravel() - y * scale)))
 
 
 def basis_pursuit_ip(A: np.ndarray, y: np.ndarray, tol: float = 1e-8, mu: float = 10.0, max_newton: int = 50):
@@ -311,3 +314,48 @@ def tv_admm(A: LinearOperator, y, lam: float, n_iter: int = 200, rho: float = 1.
         r = A(x) - y
         obj.append(0.5 * float(np.vdot(r, r).real) + lam * float(np.sqrt(np.abs(gx) ** 2 + np.abs(gy) ** 2).sum()))
     return Result(x, obj, n_iter, float(np.linalg.norm(A(x) - y)))
+
+
+def tv_fourier(shape, idx, y, lam: float, n_iter: int = 300, rho: float = 1.0, x0=None):
+    """min ½‖P F x − y‖² + λ‖∇x‖₂,₁ for partial-Fourier measurements, with an *exact* x-update.
+
+    With periodic finite differences, both PᵀP (a mask) and ∇ᵀ∇ (a Laplacian) are diagonal in the
+    Fourier domain, so the ADMM x-update is one division per frequency (Goldstein & Osher 2009, the
+    split-Bregman MRI reconstruction). ``idx`` are flat indices into ``fftn(x, norm='ortho')``.
+    """
+    y = np.asarray(y, complex)
+    n1, n2 = shape
+    mask = np.zeros(n1 * n2)
+    mask[idx] = 1.0
+    mask = mask.reshape(shape)
+    Y = np.zeros(n1 * n2, complex)
+    Y[idx] = y
+    Y = Y.reshape(shape)
+    # Fourier multipliers of the periodic forward differences
+    kx = np.exp(-2j * np.pi * np.fft.fftfreq(n2))[None, :] - 1
+    ky = np.exp(-2j * np.pi * np.fft.fftfreq(n1))[:, None] - 1
+    denom = mask + rho * (np.abs(kx) ** 2 + np.abs(ky) ** 2)
+    denom[denom == 0] = 1.0
+
+    def grad(v):
+        return np.roll(v, -1, axis=1) - v, np.roll(v, -1, axis=0) - v
+
+    def div(px, py):  # −gradᵀ for the periodic forward difference above
+        return (px - np.roll(px, 1, axis=1)) + (py - np.roll(py, 1, axis=0))
+
+    x = np.zeros(shape, complex) if x0 is None else np.array(x0, complex)
+    zx, zy = grad(x)
+    ux, uy = np.zeros_like(zx), np.zeros_like(zy)
+    obj = []
+    for _ in range(n_iter):
+        rhs = Y - rho * np.fft.fft2(div(zx - ux, zy - uy), norm="ortho")
+        x = np.fft.ifft2(rhs / denom, norm="ortho")
+        gx, gy = grad(x)
+        vx, vy = gx + ux, gy + uy
+        mag = np.sqrt(np.abs(vx) ** 2 + np.abs(vy) ** 2)
+        shrink = np.maximum(1 - (lam / rho) / np.maximum(mag, 1e-30), 0)
+        zx, zy = vx * shrink, vy * shrink
+        ux, uy = ux + gx - zx, uy + gy - zy
+        r = np.fft.fft2(x, norm="ortho").ravel()[idx] - y
+        obj.append(0.5 * float(np.vdot(r, r).real) + lam * float(mag.sum()))
+    return Result(x, obj, n_iter, float(np.linalg.norm(r)))
