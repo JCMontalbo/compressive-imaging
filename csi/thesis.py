@@ -107,3 +107,43 @@ def shepp_logan(n: int) -> np.ndarray:
         yr = -(x - x0) * np.sin(p) + (y - y0) * np.cos(p)
         img[(xr / a) ** 2 + (yr / b) ** 2 <= 1] += a0
     return np.clip(img, 0, None) / img.max()
+
+
+def threshold_keep(F: np.ndarray, K: float, separate: bool = False) -> np.ndarray:
+    """The thesis's selection rule as a boolean mask on the Fourier data.
+
+    ``separate=False``: keep |F| ≥ max|F| / K.  ``separate=True``: threshold the real and imaginary
+    parts separately (keep a coefficient if either part clears its own max / K), which is the rule the
+    thesis describes in words.
+    """
+    if separate:
+        re, im = F.real, F.imag
+        return (np.abs(re) >= np.abs(re).max() / K) | (np.abs(im) >= np.abs(im).max() / K)
+    return np.abs(F) >= np.abs(F).max() / K
+
+
+def rate_distortion(x: np.ndarray, rule: str = "topk", ks=None, separate: bool = False):
+    """Fraction of Fourier coefficients kept vs. relative reconstruction error, for a signal or image.
+
+    ``rule="topk"``: keep the k largest |F|.  ``rule="threshold"``: the thesis's K-ratio rule, sweeping K.
+    Returns (fractions_kept, errors).
+    """
+    F = np.fft.fftn(x)
+    n = F.size
+    fr, err = [], []
+    if rule == "topk":
+        order = np.argsort(np.abs(F).ravel())[::-1]
+        ks = ks if ks is not None else np.unique(np.round(np.logspace(0, np.log10(n), 40)).astype(int))
+        for k in ks:
+            keep = np.zeros(n, bool)
+            keep[order[:k]] = True
+            rec = np.fft.ifftn((F.ravel() * keep).reshape(F.shape)).real
+            fr.append(k / n)
+            err.append(np.linalg.norm(rec - x) / np.linalg.norm(x))
+    else:
+        for K in np.logspace(0, 4, 40):
+            keep = threshold_keep(F, K, separate)
+            rec = np.fft.ifftn(F * keep).real
+            fr.append(keep.mean())
+            err.append(np.linalg.norm(rec - x) / np.linalg.norm(x))
+    return np.array(fr), np.array(err)

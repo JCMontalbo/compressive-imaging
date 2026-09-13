@@ -13,8 +13,9 @@ This repository is that next step, done with the pass/fail lines written down fi
 1. **The solvers, written from scratch** and tested against theory — ISTA, FISTA, OMP, CoSaMP, IRLS,
    ADMM basis pursuit, a log-barrier interior-point method for basis pursuit, and ADMM total variation
    with an exact Fourier-domain update.
-2. **The thesis's experiments reproduced and labelled honestly** — including the finding that its test
-   signals were never sparse, which is why its ℓ₁ step "needed the original signal".
+2. **The thesis's experiments reproduced** — its transform-coding idea measured as the rate–distortion
+   curve it is (a natural image from 1 % of its Fourier coefficients at 8 % error), and the finding that
+   its own test signals were never sparse, which is why its ℓ₁ step "needed the original signal".
 3. **The radar imaging the thesis pointed at, built** — turntable ISAR from the thesis's own scattering
    model, sampled compressively, with the one decision that makes or breaks it: sparsity has to be assumed
    in the image, not the data. Same 22.5 % of the samples: F1 0.54 → 0.96 (the full-data ceiling).
@@ -84,6 +85,33 @@ walk on the *kept* samples and then running image-domain ℓ₁ gives F1 0.96, t
 compensated stays at 0.61.
 
 ## 2. The master's thesis, reproduced honestly
+
+**The thesis's central idea works, and here is what it is.** Take a signal's Fourier data, keep the
+coefficients whose magnitude clears a threshold, zero the rest, invert. That is transform coding — the
+principle behind JPEG and MP3 — and the thesis's claim is a rate–distortion one: *certain transformations
+allow minimal data and high reconstruction rate.* Measured, with the thesis's K-ratio threshold and the
+plain top-k rule side by side:
+
+![thesis rate distortion](figures/thesis_ratedistortion.png)
+
+| keep this fraction of the Fourier coefficients → relative error | 1 % | 5 % | 20 % |
+|---|---|---|---|
+| natural image (a Sintel frame) | **0.084** | **0.044** | 0.022 |
+| on-bin tones (10 of 400 coefficients carry everything) | 0.010 | 0.000 | 0.000 |
+| the thesis's sine train (aliased, off-bin tones) | 0.375 | 0.188 | 0.088 |
+| chirp train | 0.927 | 0.763 | 0.330 |
+| Shepp–Logan phantom | 0.650 | 0.477 | 0.270 |
+
+A natural image reconstructs to 8 % error from **1 %** of its Fourier coefficients and 4 % from 5 % — the
+thesis's thermal-image and Lena results, quantified. The K-ratio rule (dots) follows top-k (lines) because
+it selects in the same order. Two honest boundaries: sharp-edged images like the phantom are *not*
+Fourier-compressible (their sparse domain is the gradient — which is why the thesis's chapter 6 reaches for
+total variation on exactly this image), and chirps are not compressible in any fixed basis. And one
+distinction the thesis itself draws (p. 41): selecting the coefficients requires the whole signal, so this is
+compression after acquisition; recovering from *partial* acquisition is the separate question of chapter 6
+and of Part 3 below.
+
+**The thesis's own test signals.**
 
 ![thesis example 1](figures/thesis_example1.png)
 

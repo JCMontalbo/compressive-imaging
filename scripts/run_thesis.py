@@ -17,7 +17,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from csi import PartialFourier, basis_pursuit_ip, radial_lines_mask  # noqa: E402
 from csi.solvers import tv_fourier  # noqa: E402
-from csi.thesis import N, T, chirp_train, cos_sin_dictionary, ftsa, nus_indices, on_bin_tones, shepp_logan, sine_train, synth_from_dictionary, wht_tsa  # noqa: E402
+from csi.thesis import N, T, chirp_train, cos_sin_dictionary, ftsa, nus_indices, on_bin_tones, rate_distortion, shepp_logan, sine_train, synth_from_dictionary, wht_tsa  # noqa: E402
 
 FIG = Path(__file__).resolve().parents[1] / "figures"
 
@@ -162,8 +162,59 @@ def fig_radial():
     return lines, fracs, errs_zf, errs_tv
 
 
+def fig_rate_distortion():
+    """The thesis's actual claim: how few Fourier coefficients reconstruct a signal or image at a given error."""
+    import os
+
+    frame_path = Path(os.environ.get("TMP", "/tmp")) / "bbb" / "sintel_frames.npy"
+    natural = np.load(frame_path)[0] if frame_path.exists() else None
+    signals = {
+        "thesis sine train (aliased tones)": sine_train([9, 10, 2, 10, 7]),
+        "on-bin tones": on_bin_tones([7, 23, 41, 88, 131], 10.0 ** np.arange(1, 6)),
+        "chirp train": chirp_train([9, 10, 2, 10, 7]),
+        "Shepp-Logan phantom 128x128": shepp_logan(128),
+    }
+    if natural is not None:
+        signals["natural image (Sintel frame)"] = natural
+    fig = plt.figure(figsize=(14, 5), constrained_layout=True)
+    gs = fig.add_gridspec(1, 4, width_ratios=[2.2, 1, 1, 1])
+    ax = fig.add_subplot(gs[0, 0])
+    rows = {}
+    for (name, x), col in zip(signals.items(), plt.rcParams["axes.prop_cycle"].by_key()["color"]):
+        fr_k, err_k = rate_distortion(x, "topk")
+        fr_t, err_t = rate_distortion(x, "threshold")
+        ax.loglog(fr_k, np.maximum(err_k, 1e-6), "-", c=col, label=name)
+        ax.loglog(fr_t, np.maximum(err_t, 1e-6), "o", c=col, ms=3, alpha=0.6)
+        rows[name] = {p: float(err_k[np.argmin(np.abs(fr_k - p))]) for p in (0.01, 0.05, 0.2)}
+    ax.set_xlabel("fraction of Fourier coefficients kept")
+    ax.set_ylabel("relative reconstruction error")
+    ax.set_title("Keep the largest Fourier coefficients, zero the rest, invert  (lines: top-k; dots: the thesis K-ratio threshold)", fontsize=9)
+    ax.grid(alpha=0.3, which="both")
+    ax.legend(fontsize=8)
+    if natural is not None:
+        F = np.fft.fft2(natural)
+        order = np.argsort(np.abs(F).ravel())[::-1]
+        for j, p in enumerate((0.01, 0.05, 0.2), start=1):
+            keep = np.zeros(F.size, bool)
+            keep[order[: int(p * F.size)]] = True
+            rec = np.fft.ifft2((F.ravel() * keep).reshape(F.shape)).real
+            a = fig.add_subplot(gs[0, j])
+            a.imshow(rec, cmap="gray", vmin=0, vmax=1)
+            a.set_title(f"{p:.0%} of coefficients: error {rows['natural image (Sintel frame)'][p]:.3f}", fontsize=9)
+            a.set_xticks([])
+            a.set_yticks([])
+    fig.savefig(FIG / "thesis_ratedistortion.png", dpi=110)
+    plt.close(fig)
+    return rows
+
+
 def main():
     FIG.mkdir(exist_ok=True)
+    rd = fig_rate_distortion()
+    print("thesis_ratedistortion.png -- relative error when keeping 1 % / 5 % / 20 % of the Fourier coefficients")
+    for name, r in rd.items():
+        print(f"  {name:34s} {r[0.01]:.3f}  {r[0.05]:.3f}  {r[0.2]:.3f}")
+
     e1 = fig_example1()
     print("thesis_example1.png")
     print(f"  energy in top-10 DFT coefficients {e1['top10']:.3f}; FTSA (K=6, {e1['ftsa_kept']} kept) rel err {e1['ftsa_err']:.3f}; "
